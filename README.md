@@ -104,5 +104,12 @@ comment instead of the code.
 PYTHONPATH=src python -m unittest discover -s tests -t tests -v
 ```
 
-15 tests. CI runs them on Linux and macOS across Python 3.9–3.13, with
+15 tests. CI runs them on Linux across Python 3.9–3.13, with
 `ResourceWarning` promoted to an error.
+
+**macOS is not verified here.** The matrix asked for it and GitHub never
+allocated a runner: across two runs, all ten macOS jobs were cancelled after
+~25 minutes with zero steps started. Rather than keep a matrix entry that reds
+the badge while proving nothing, the claim now matches what executed — the
+durability sequence is POSIX and should hold on macOS, and that word *should*
+is doing real work until a run says otherwise.

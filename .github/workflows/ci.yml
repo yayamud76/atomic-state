@@ -15,7 +15,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macos-latest was here and is deliberately gone. Across two runs, all
+        # TEN macOS jobs were CANCELLED with zero steps ever started -- queued
+        # 18:32:24, killed 18:57:10, no runner ever allocated to this account.
+        # A job that cannot be scheduled reds the badge while proving nothing,
+        # and a matrix entry that never executes is a coverage claim with no
+        # alarm on it. The README states what actually ran. Re-add it the day
+        # a macOS runner allocates, and let the run be the evidence.
+        os: [ubuntu-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
