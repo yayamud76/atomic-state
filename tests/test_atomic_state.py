@@ -12,6 +12,7 @@ import ast
 import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,22 @@ class Recovery(unittest.TestCase):
         with open(os.path.join(self.d, name), "w") as f:
             f.write(body)
 
+    def test_recovery_prefers_the_NEWEST_complete_temp(self):
+        """Two interrupted writes is exactly when recovery runs.
+
+        `temp_files` sorts by NAME for a stable listing and mkstemp names are
+        random, so recovering in that order picked an arbitrary temp. Measured
+        before the fix: with these two present, read_json returned the 1970 one
+        and logged "recovered a complete temp" with no hint it had a choice.
+        Restoring older state over newer is worse than returning the default.
+        """
+        self._temp("AAAAAA", json.dumps({"gen": "OLD"}))
+        self._temp("zzzzzz", json.dumps({"gen": "NEW"}))
+        old = os.path.join(self.d, a.temp_prefix(self.p) + "AAAAAA.tmp")
+        os.utime(old, (1, 1))
+        self.assertEqual(a.read_json(self.p), {"gen": "NEW"},
+                         "the lexically-first temp is 50 years older")
+
     def test_a_clean_write_then_read_returns_the_new_state(self):
         a.write_json(self.p, {"positions": {"AAA": 1}})
         self.assertEqual(a.read_json(self.p), {"positions": {"AAA": 1}})
@@ -189,6 +206,43 @@ class Scope(unittest.TestCase):
 
     Stated as a test so the boundary is checkable rather than only documented.
     """
+
+    def test_it_does_not_RE_PERMISSION_the_file_it_replaces(self):
+        """temp-and-rename silently re-permissions its target.
+
+        mkstemp creates 0600, so replacing an existing 0644 state file left it
+        readable only by its owner -- measured, 0o644 -> 0o600 on the first
+        write. Nothing raises, the write returns True, and the next reader just
+        cannot open it. Both writers are checked: a durability sequence kept in
+        one place is the module's own argument, and this is the assertion that
+        notices if it stops being.
+        """
+        d = tempfile.mkdtemp()
+        for mode in (0o644, 0o640, 0o664):
+            for writer, arg in ((a.write_json, {"k": 1}), (a.write_text, "x")):
+                p = os.path.join(d, f"{writer.__name__}-{mode:o}.json")
+                with open(p, "w") as f:
+                    f.write("{}")
+                os.chmod(p, mode)
+                self.assertTrue(writer(p, arg))
+                got = stat.S_IMODE(os.stat(p).st_mode)
+                self.assertEqual(got, mode,
+                                 f"{writer.__name__} changed {mode:o} -> {got:o}")
+
+    def test_a_NEW_file_is_PRIVATE_and_that_is_deliberate(self):
+        """A file this module creates is 0600, not 0666 & ~umask.
+
+        The stricter of the two defensible readings: state this library is for
+        decides whether capital is deployed, and the alternative needs the
+        umask dance (`os.umask(0)` to read it), which is a race in any threaded
+        process. Pinned so the choice is visible rather than incidental -- a
+        caller who wants it group-readable chmods the file once and every later
+        write preserves that.
+        """
+        d = tempfile.mkdtemp()
+        p = os.path.join(d, "new.json")
+        self.assertTrue(a.write_json(p, {}))
+        self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
 
     def test_it_prevents_torn_reads_NOT_lost_updates(self):
         """Atomicity is per-write. Two read-modify-write cycles still clobber.

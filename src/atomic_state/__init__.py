@@ -36,6 +36,7 @@ that. You need mutual exclusion or per-field ownership for it.
 import json
 import logging
 import os
+import stat
 import tempfile
 
 __all__ = ["write_json", "write_text", "read_json", "temp_files", "temp_prefix"]
@@ -59,9 +60,22 @@ def _atomic_write(path, write_body, label):
     """
     d = os.path.dirname(os.path.abspath(path)) or "."
     tmp = None
+    # THE MODE OF THE FILE BEING REPLACED, read before anything is written.
+    # temp-and-rename silently re-permissions its target: mkstemp creates 0600,
+    # so replacing an existing 0644 state file left it readable only by its
+    # owner -- measured, 0o644 -> 0o600 on the first write. Nothing fails; the
+    # next reader just cannot open it, and the write that did it reported True.
+    # Ownership is NOT restored (that needs privilege this does not assume) and
+    # the README says so rather than leaving it to be discovered.
+    try:
+        keep_mode = stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        keep_mode = None              # a new file: mkstemp's 0600 stands
     try:
         os.makedirs(d, exist_ok=True)
         fd, tmp = tempfile.mkstemp(prefix=temp_prefix(path), suffix=".tmp", dir=d)
+        if keep_mode is not None:
+            os.fchmod(fd, keep_mode)
         with os.fdopen(fd, "w") as f:
             write_body(f)
             f.flush()
@@ -128,13 +142,27 @@ def read_json(path, default=None):
                   "the default, NOT a temp file", path, e)
         return default
 
+    # NEWEST FIRST. `temp_files` sorts by NAME for a stable listing, and
+    # mkstemp names are random -- so recovering in that order picked an
+    # arbitrary temp. Measured: with two complete temps present, read_json
+    # returned the one dated 1970 and ignored the one written seconds earlier,
+    # logging "recovered a complete temp" either way. Two interrupted writes
+    # are exactly when recovery runs, and restoring the older state over the
+    # newer is the one outcome worse than returning the default.
     d = os.path.dirname(os.path.abspath(path)) or "."
-    for name in temp_files(path):
+
+    def _mtime(name):
+        try:
+            return os.stat(os.path.join(d, name)).st_mtime
+        except OSError:
+            return -1.0
+    for name in sorted(temp_files(path), key=_mtime, reverse=True):
         try:
             with open(os.path.join(d, name)) as f:
                 data = json.load(f)
             log.warning("atomic_state.read_json(%s): main file absent, "
-                        "recovered a complete temp (%s)", path, name)
+                        "recovered the NEWEST complete temp (%s of %d)",
+                        path, name, len(temp_files(path)))
             return data
         except Exception:
             continue                  # a torn temp is skipped, never guessed at

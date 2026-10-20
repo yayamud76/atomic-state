@@ -58,9 +58,24 @@ per-field ownership, which is a different mechanism. The boundary is pinned by a
 test (`Scope.test_it_prevents_torn_reads_NOT_lost_updates`) so it stays checkable
 rather than merely documented.
 
+**It preserves the mode of the file it replaces; it does not preserve the
+owner.** temp-and-rename silently re-permissions its target — `mkstemp` creates
+`0600`, so replacing an existing `0644` state file left it readable only by its
+owner. Measured: `0o644 -> 0o600` on the first write, with the write returning
+`True` and the next reader simply unable to open it. The mode is now read before
+the write and restored onto the temp. **Ownership is not**: a root process
+replacing a file owned by someone else produces a root-owned file, because
+restoring it needs privilege this module does not assume. Write as the owner.
+
+A file this module *creates* is `0600`, not `0666 & ~umask`. That is the
+stricter of the two defensible readings, and deliberate: the alternative needs
+the `os.umask(0)` dance to read the umask, which is a race in any threaded
+process. `chmod` once and every later write preserves it.
+
 Also out of scope: cross-filesystem replacement (`os.replace` is atomic *within*
-one filesystem — keep the temp beside the target, which this does), and Windows,
-where `os.replace` is atomic but the proof above can't be run.
+one filesystem — keep the temp beside the target, which this does), replacing a
+**symlink** (`os.replace` replaces the link itself with a regular file), and
+Windows, where `os.replace` is atomic but the proof above can't be run.
 
 ## Design notes
 
@@ -104,7 +119,7 @@ comment instead of the code.
 PYTHONPATH=src python -m unittest discover -s tests -t tests -v
 ```
 
-15 tests. CI runs them on Linux across Python 3.9–3.13, with
+18 tests. CI runs them on Linux across Python 3.9–3.13, with
 `ResourceWarning` promoted to an error.
 
 **macOS is not verified here.** The matrix asked for it and GitHub never
