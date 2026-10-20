@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atomic-state"
+version = "0.1.0"
+description = "Durable atomic file replacement: a reader sees the old complete file or the new one, never a mixture."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Yaya" }]
+requires-python = ">=3.9"
+keywords = ["atomic", "durability", "fsync", "crash-safety", "json", "state"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Filesystems",
+]
+dependencies = []
+
+[project.urls]
+Source = "https://github.com/yayamud76/atomic-state"
+
+[tool.setuptools.packages.find]
+where = ["src"]

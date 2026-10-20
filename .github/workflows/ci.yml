@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # POSIX only, deliberately: the central test SIGKILLs a real child process.
+    # os.replace is atomic on Windows too, but the proof this package rests on
+    # cannot be run there, and shipping an unproven claim is the thing it is
+    # against.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run tests (warnings are errors)
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -t tests -v -W error::ResourceWarning
