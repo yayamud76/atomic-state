@@ -25,4 +25,9 @@ jobs:
       - name: Run tests (warnings are errors)
         env:
           PYTHONPATH: src
-        run: python -m unittest discover -s tests -t tests -v -W error::ResourceWarning
+        # -W is an INTERPRETER flag, so it has to precede -m. Passed after it,
+        # argparse inside unittest's own CLI rejects it -- "unrecognized
+        # arguments: -W", exit 2, before a single test runs. The job fails for
+        # a reason that has nothing to do with the package, and the promotion
+        # the flag was added for never takes effect.
+        run: python -W error::ResourceWarning -m unittest discover -s tests -t tests -v
